@@ -5,6 +5,18 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [No publicado]
 
+## [0.3.0] - 2026-10-13
+
+### Agregado
+
+- `kind` en `Choropleth` y `Categories`: `polygon`, `point` (marca con `mark`, `size` y contorno) o
+  `line` (trazo de `size` pixeles).
+- Categorías con varios valores: `Category(("a", "b"), color)` se escribe como `Or` de igualdades.
+- Filtro `Like` (`PropertyIsLike`), con `wildCard`, `singleChar` y `escape` o `escapeChar`.
+- `anchor` y `displacement` en `Graphic`.
+- Integración continua en GitHub Actions (Python 3.12 a 3.14 y pruebas contra GeoServer) y
+  publicación en PyPI por etiqueta `v*`.
+
 ## [0.2.0] - 2026-10-13
 
 ### Agregado

@@ -9,13 +9,20 @@ from calco.errors import InvalidModel, NotRecognized
 from calco.expressions import Expression, optional_expression
 from calco.filters import And, Compare, Filter, IsNull
 from calco.model import Rule, ScaleRange, StyledLayer
-from calco.recipes.common import build_layer, only, single_style, split_text_rules
+from calco.recipes.common import build_layer, single_style, split_text_rules
 from calco.recipes.fills import NullStyle, match_null
 from calco.recipes.label import Label
-from calco.symbolizers import Fill, PolygonSymbolizer, Stroke
+from calco.recipes.swatch import (
+    DEFAULT_MARK,
+    DEFAULT_SIZE,
+    Kind,
+    check_swatch,
+    class_symbolizer,
+    read_class_symbolizer,
+)
+from calco.symbolizers import Stroke
 from calco.values import (
     Number,
-    in_range,
     optional_number,
     optional_text,
     parse_number,
@@ -55,13 +62,18 @@ class Choropleth:
     title: str | None = None
     abstract: str | None = None
     style_name: str | None = None
+    kind: Kind = "polygon"
+    size: float = DEFAULT_SIZE
+    mark: str = DEFAULT_MARK
 
     def __post_init__(self) -> None:
         set_field(self, "layer", required_text(self.layer, "Choropleth.layer"))
         set_field(self, "attribute", required_text(self.attribute, "Choropleth.attribute"))
         set_field(self, "classes", _check_classes(self.classes))
-        set_field(self, "fill_opacity", in_range(self.fill_opacity, "fill_opacity", 0, 1))
-        for name, kind in (("stroke", Stroke), ("null", NullStyle), ("label", Label)):
+        check_swatch(self, "Choropleth")
+        if self.null is not None and self.kind != "polygon":
+            raise InvalidModel("the null rule is only available for polygons")
+        for name, kind in (("null", NullStyle), ("label", Label)):
             value = getattr(self, name)
             if value is not None and not isinstance(value, kind):
                 raise InvalidModel(f"Choropleth.{name} must be a {kind.__name__}")
@@ -113,11 +125,7 @@ class Choropleth:
         last = len(self.classes) - 1
         rules = [
             Rule(
-                (
-                    PolygonSymbolizer(
-                        Fill(item.color, self.fill_opacity), self.stroke, self.geometry
-                    ),
-                ),
+                (class_symbolizer(self, item.color),),
                 name=f"class-{index + 1}",
                 title=item.title,
                 filter=_range_filter(self.attribute, item, index == last),
@@ -227,21 +235,12 @@ def _read_classes(rules: list[Rule]) -> tuple[str, tuple[RangeClass, ...], dict[
         is_last = index == len(rules) - 1
         if operator is not None and operator != ("<=" if is_last else "<"):
             raise NotRecognized("only the last class closes its upper bound with <=")
-        polygon = only(rule.symbolizers, PolygonSymbolizer, "a range rule")
-        assert isinstance(polygon, PolygonSymbolizer)
-        if not isinstance(polygon.fill, Fill):
-            raise NotRecognized("range rules need a plain fill")
-        current = {
-            "stroke": polygon.stroke,
-            "fill_opacity": polygon.fill.opacity,
-            "geometry": polygon.geometry,
-            "scales": rule.scales,
-        }
+        color, current = read_class_symbolizer(rule, "a range rule")
         if shared is not None and current != shared:
-            raise NotRecognized("range rules differ in stroke, opacity, geometry or scales")
+            raise NotRecognized("range rules differ in symbol, opacity, geometry or scales")
         shared = current
         try:
-            classes.append(RangeClass(low, high, polygon.fill.color, rule.title))
+            classes.append(RangeClass(low, high, color, rule.title))
         except InvalidModel as exc:
             raise NotRecognized(str(exc)) from exc
     assert attribute is not None and shared is not None

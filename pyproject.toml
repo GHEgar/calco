@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "calco"
-version = "0.2.0"
+version = "0.3.0"
 description = "Write and parse SLD styles both ways, and translate SLD labels to MapLibre layers."
 readme = "README.md"
 license = "AGPL-3.0-only"

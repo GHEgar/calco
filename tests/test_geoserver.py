@@ -90,6 +90,42 @@ CASES: dict[str, tuple[tuple[str, str], Recipe]] = {
         ),
     ),
     "annotation": (STATES, Annotation("topp:states", LABEL)),
+    "categories_points": (
+        POI,
+        Categories.from_values(
+            "tiger:poi",
+            "NAME",
+            [("museam", "art"), "lox"],
+            ["#E7298A", "#66A61E"],
+            other=Other("#999999"),
+            kind="point",
+            size=9,
+            mark="square",
+            stroke=Stroke("#FFFFFF", 1),
+        ),
+    ),
+    "categories_lines": (
+        ROADS,
+        Categories.from_values(
+            "tiger:tiger_roads",
+            "CFCC",
+            ["A41", ("A45", "A31")],
+            ["#555555", "#E6550D"],
+            kind="line",
+            size=3,
+        ),
+    ),
+    "choropleth_points": (
+        STATES,
+        Choropleth.from_breaks(
+            "topp:states",
+            "LAND_KM",
+            [None, 100_000, None],
+            ["#9ECAE1", "#08519C"],
+            kind="point",
+            size=12,
+        ),
+    ),
 }
 
 

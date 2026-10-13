@@ -11,6 +11,7 @@ from calco import (
     Fill,
     IsNull,
     Label,
+    Like,
     Literal,
     ParseError,
     Polygon,
@@ -269,3 +270,14 @@ def test_reads_symbology_encoding_1_1() -> None:
         rule_name="r",
         rule_title="Regla",
     )
+
+
+def test_reads_and_writes_like_filters() -> None:
+    xml = sld(
+        '<Rule><ogc:Filter><ogc:PropertyIsLike wildCard="%" singleChar="_" escapeChar="\\">'
+        "<ogc:PropertyName>nom</ogc:PropertyName><ogc:Literal>San%</ogc:Literal>"
+        "</ogc:PropertyIsLike></ogc:Filter><PolygonSymbolizer/></Rule>"
+    )
+    document = parse(xml)
+    assert document.layers[0].rules[0].filter == Like("nom", "San%", "%", "_", "\\")
+    assert parse(write(document)) == document

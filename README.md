@@ -54,6 +54,28 @@ style = Choropleth.from_classification("municipalities", "density", result, colo
 and `manual`. `class_of` and `legend` use the same interval rule as the SLD: `>= lower`, `< upper`,
 the last class closed. A degenerate last class (`[x, x]`) is allowed, as classification can produce it.
 
+### Points and lines by class
+
+`Choropleth` and `Categories` draw polygons by default. With `kind="point"` each class is a mark
+(`mark`, `size`, `stroke` as outline); with `kind="line"` each class is a line `size` pixels wide.
+Fields that do not apply to a kind are reset, so the round trip holds. The null rule is only for
+polygons.
+
+```python
+schools = Categories.from_values(
+    "schools",
+    "level",
+    ["primary", ("middle", "high")],
+    ["#1B9E77", "#D95F02"],
+    kind="point",
+    mark="square",
+    size=9,
+)
+```
+
+GeoServer draws a `PointSymbolizer` on every part of a multipolygon; pass
+`geometry=Function("centroid", (Property("the_geom"),))` for a single point per feature.
+
 ### Categories by value
 
 ```python
@@ -68,7 +90,8 @@ style = Categories.from_values(
 )
 ```
 
-Each category is an equality rule; `other` becomes an `ElseFilter` rule. Values written as canonical
+Each category is an equality rule, or an `Or` of equalities when it groups several values
+(`Category(("A41", "A45"), "#E6550D")`); `other` becomes an `ElseFilter` rule. Values written as canonical
 numbers (`15`) read back as numbers; anything else (`"001"`) stays text.
 
 ### Single polygon, lines, points and labels only
@@ -86,7 +109,8 @@ roads = Line("roads", (Stroke("#333333", 5), Stroke("#FFD966", 3)))
 names = Annotation("cities", Label(Property("name"), halo=Halo(1.5)))
 ```
 
-A `Line` with several strokes draws them in order, which gives a cased road.
+A `Line` with several strokes draws them in order, which gives a cased road. A `Graphic` may carry
+`anchor` and `displacement`, which GeoServer and SE 1.1 understand but SLD 1.0.0 does not validate.
 
 ### Geometry and label expressions
 
@@ -117,7 +141,7 @@ if isinstance(style, Unrecognized):
     print(style.reasons)
 ```
 
-`parse` returns a generic model (`StyledLayerDescriptor`, `StyledLayer`, `UserStyle`,
+Filters cover `IsNull`, the six comparisons, `Between`, `Like`, `And`, `Or` and `Not`. `parse` returns a generic model (`StyledLayerDescriptor`, `StyledLayer`, `UserStyle`,
 `FeatureTypeStyle`, `Rule`, filters and symbolizers) that `write` turns back into XML. `recognize`
 tries `Choropleth`, `Categories`, `Polygon`, `Line`, `Point` and `Annotation`, and returns the first that matches with nothing left over,
 or `Unrecognized` with the reason each recipe gave.
@@ -172,6 +196,10 @@ pytest
 ruff check . && ruff format --check .
 mypy
 ```
+
+GitHub Actions runs the suite on Python 3.12 to 3.14 and the `geoserver` tests against a service
+container. Pushing a `v*` tag that matches the package version publishes to PyPI through trusted
+publishing.
 
 Tests marked `geoserver` run against a live GeoServer with its sample data, and are skipped
 otherwise:

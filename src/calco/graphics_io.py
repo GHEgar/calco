@@ -5,7 +5,7 @@ from xml.etree.ElementTree import Element
 from calco.errors import InvalidModel
 from calco.symbolizers import ExternalGraphic, Fill, Graphic, GraphicFill, Mark, Stroke
 from calco.values import format_number, parse_number
-from calco.xmltools import SLD, XLINK, Reader, local, sub, sub_number, write_params
+from calco.xmltools import SLD, XLINK, Children, Reader, local, sub, sub_number, write_params
 
 PARAMS = ("CssParameter", "SvgParameter")
 STROKE_PARAMS = (
@@ -63,6 +63,11 @@ def write_graphic(parent: Element, graphic: Graphic) -> None:
     if graphic.size is not None:
         sub_number(node, "Size", graphic.size)
     sub_number(node, "Rotation", graphic.rotation)
+    for tag, pair in (("AnchorPoint", graphic.anchor), ("Displacement", graphic.displacement)):
+        if pair is not None:
+            point = sub(node, SLD, tag)
+            sub_number(point, f"{tag}X", pair[0])
+            sub_number(point, f"{tag}Y", pair[1])
 
 
 def read_stroke(reader: Reader, elem: Element, path: str) -> Stroke | None:
@@ -117,7 +122,11 @@ def read_fill(reader: Reader, elem: Element, path: str) -> Fill | GraphicFill | 
 
 
 def read_graphic(reader: Reader, elem: Element, path: str) -> Graphic | None:
-    groups = reader.children(elem, path, ("ExternalGraphic", "Mark", "Opacity", "Size", "Rotation"))
+    groups = reader.children(
+        elem,
+        path,
+        ("ExternalGraphic", "Mark", "Opacity", "Size", "Rotation", "AnchorPoint", "Displacement"),
+    )
     order = list(elem)
     symbols = sorted(
         groups.get("ExternalGraphic", []) + groups.get("Mark", []),
@@ -140,6 +149,8 @@ def read_graphic(reader: Reader, elem: Element, path: str) -> Graphic | None:
             size=reader.number(groups, "Size", None),
             rotation=reader.number(groups, "Rotation", 0) or 0,
             opacity=reader.number(groups, "Opacity", 1) or 0,
+            anchor=_read_pair(reader, groups, "AnchorPoint"),
+            displacement=_read_pair(reader, groups, "Displacement"),
         )
     except InvalidModel as exc:
         reader.note(path, str(exc))
@@ -176,3 +187,13 @@ def _read_external(reader: Reader, elem: Element, path: str) -> ExternalGraphic 
     except InvalidModel as exc:
         reader.note(path, str(exc))
         return None
+
+
+def _read_pair(reader: Reader, groups: Children, tag: str) -> tuple[float, float] | None:
+    found = reader.one(groups, tag)
+    if found is None:
+        return None
+    coords = reader.children(found[0], found[1], (f"{tag}X", f"{tag}Y"))
+    x = reader.number(coords, f"{tag}X", 0)
+    y = reader.number(coords, f"{tag}Y", 0)
+    return (x or 0, y or 0)

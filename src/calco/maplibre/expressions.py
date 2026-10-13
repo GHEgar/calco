@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from calco.expressions import Expression, Function, Literal, Property
-from calco.filters import And, Between, Compare, Filter, IsNull, Not, Or
+from calco.filters import And, Between, Compare, Filter, IsNull, Like, Not, Or
 from calco.values import parse_number
 
 CONCAT_FUNCTIONS = ("Concatenate", "concatenate", "strConcat", "concat")
@@ -93,6 +93,8 @@ def filter_expression(rule_filter: Filter) -> list[Any]:
         return ["==", ["get", rule_filter.property], None]
     if isinstance(rule_filter, Compare):
         return [OPERATORS[rule_filter.operator], ["get", rule_filter.property], rule_filter.value]
+    if isinstance(rule_filter, Like):
+        raise Untranslatable("PropertyIsLike has no MapLibre equivalent")
     if isinstance(rule_filter, Between):
         value = ["get", rule_filter.property]
         return ["all", [">=", value, rule_filter.lower], ["<=", value, rule_filter.upper]]

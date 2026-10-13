@@ -17,6 +17,9 @@ def plain(recipe: Choropleth | Categories | Polygon | Line | Point) -> bool:
     labels = [recipe.label] if recipe.label is not None else []
     if recipe.geometry is not None and not isinstance(recipe.geometry, Property):
         return False
+    graphic = getattr(recipe, "graphic", None)
+    if graphic is not None and (graphic.anchor is not None or graphic.displacement is not None):
+        return False
     return all(
         not label.vendor_options and isinstance(label.geometry, Property | None) for label in labels
     )

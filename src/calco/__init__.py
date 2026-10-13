@@ -2,7 +2,7 @@ from calco.classify import Classification, class_of, classify, legend
 from calco.document import parse, write
 from calco.errors import CalcoError, InvalidModel, NotRecognized, ParseError
 from calco.expressions import Expression, Function, Literal, Property
-from calco.filters import And, Between, Compare, Filter, IsNull, Not, Or
+from calco.filters import And, Between, Compare, Filter, IsNull, Like, Not, Or
 from calco.model import (
     FeatureTypeStyle,
     Rule,
@@ -44,7 +44,7 @@ from calco.symbolizers import (
     TextSymbolizer,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "And",
@@ -70,6 +70,7 @@ __all__ = [
     "InvalidModel",
     "IsNull",
     "Label",
+    "Like",
     "Line",
     "LinePlacement",
     "LineSymbolizer",

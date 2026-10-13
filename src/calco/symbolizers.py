@@ -21,6 +21,14 @@ FONT_STYLES = ("normal", "italic", "oblique")
 FONT_WEIGHTS = ("normal", "bold")
 
 
+def _pair(value: object, field_name: str) -> tuple[float, float] | None:
+    if value is None:
+        return None
+    if not isinstance(value, tuple | list) or len(value) != 2:
+        raise InvalidModel(f"{field_name} must be an (x, y) pair")
+    return (to_number(value[0], field_name), to_number(value[1], field_name))
+
+
 def _optional(value: object, kind: type | tuple[type, ...], field_name: str) -> None:
     if value is not None and not isinstance(value, kind):
         raise InvalidModel(f"{field_name} has the wrong type: {value!r}")
@@ -88,8 +96,12 @@ class Graphic:
     size: float | None = None
     rotation: float = 0
     opacity: float = 1
+    anchor: tuple[float, float] | None = None
+    displacement: tuple[float, float] | None = None
 
     def __post_init__(self) -> None:
+        for name in ("anchor", "displacement"):
+            set_field(self, name, _pair(getattr(self, name), f"Graphic.{name}"))
         if not isinstance(self.symbol, Mark | ExternalGraphic):
             raise InvalidModel("Graphic.symbol must be a Mark or an ExternalGraphic")
         size = optional_number(self.size, "Graphic.size")

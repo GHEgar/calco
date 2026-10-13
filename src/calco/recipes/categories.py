@@ -6,33 +6,47 @@ from typing import Any
 
 from calco.errors import InvalidModel, NotRecognized
 from calco.expressions import Expression, optional_expression
-from calco.filters import Compare, IsNull
+from calco.filters import Compare, Filter, IsNull, Or
 from calco.model import Rule, ScaleRange, StyledLayer
-from calco.recipes.common import build_layer, only, single_style, split_text_rules
+from calco.recipes.common import build_layer, single_style, split_text_rules
 from calco.recipes.fills import NullStyle, match_null
 from calco.recipes.label import Label
-from calco.symbolizers import Fill, PolygonSymbolizer, Stroke
-from calco.values import (
-    Number,
-    in_range,
-    literal_value,
-    optional_text,
-    required_text,
-    set_field,
-    to_color,
+from calco.recipes.swatch import (
+    DEFAULT_MARK,
+    DEFAULT_SIZE,
+    Kind,
+    check_swatch,
+    class_symbolizer,
+    read_class_symbolizer,
 )
+from calco.symbolizers import Stroke
+from calco.values import Number, literal_value, optional_text, required_text, set_field, to_color
+
+Value = Number | str
 
 
 @dataclass(frozen=True)
 class Category:
-    value: Number | str
+    value: Value | tuple[Value, ...]
     color: str
     title: str | None = None
 
     def __post_init__(self) -> None:
-        set_field(self, "value", literal_value(self.value, "Category.value"))
+        raw = self.value if isinstance(self.value, tuple | list) else (self.value,)
+        values = tuple(literal_value(item, "Category.value") for item in raw)
+        if not values or len(set(values)) != len(values):
+            raise InvalidModel("Category needs one or more distinct values")
+        set_field(self, "value", values[0] if len(values) == 1 else values)
         set_field(self, "color", to_color(self.color, "Category.color"))
         set_field(self, "title", optional_text(self.title, "Category.title"))
+
+    @property
+    def values(self) -> tuple[Value, ...]:
+        return self.value if isinstance(self.value, tuple) else (self.value,)
+
+    def filter(self, attribute: str) -> Filter:
+        parts = tuple(Compare(attribute, "=", item) for item in self.values)
+        return parts[0] if len(parts) == 1 else Or(parts)
 
 
 @dataclass(frozen=True)
@@ -60,6 +74,9 @@ class Categories:
     title: str | None = None
     abstract: str | None = None
     style_name: str | None = None
+    kind: Kind = "polygon"
+    size: float = DEFAULT_SIZE
+    mark: str = DEFAULT_MARK
 
     def __post_init__(self) -> None:
         set_field(self, "layer", required_text(self.layer, "Categories.layer"))
@@ -69,12 +86,14 @@ class Categories:
             raise InvalidModel("Categories.categories needs at least one Category")
         if not all(isinstance(item, Category) for item in items):
             raise InvalidModel("Categories.categories has a non-Category item")
-        if len({item.value for item in items}) != len(items):
-            raise InvalidModel("category values must be unique")
+        every = [value for item in items for value in item.values]
+        if len(set(every)) != len(every):
+            raise InvalidModel("a value belongs to more than one category")
         set_field(self, "categories", tuple(items))
-        set_field(self, "fill_opacity", in_range(self.fill_opacity, "fill_opacity", 0, 1))
-        checks = (("other", Other), ("stroke", Stroke), ("null", NullStyle), ("label", Label))
-        for name, kind in checks:
+        check_swatch(self, "Categories")
+        if self.null is not None and self.kind != "polygon":
+            raise InvalidModel("the null rule is only available for polygons")
+        for name, kind in (("other", Other), ("null", NullStyle), ("label", Label)):
             value = getattr(self, name)
             if value is not None and not isinstance(value, kind):
                 raise InvalidModel(f"Categories.{name} must be a {kind.__name__}")
@@ -89,7 +108,7 @@ class Categories:
         cls,
         layer: str,
         attribute: str,
-        values: Sequence[Number | str],
+        values: Sequence[Value | tuple[Value, ...]],
         colors: Sequence[str],
         titles: Sequence[str | None] | None = None,
         **options: Any,
@@ -100,16 +119,13 @@ class Categories:
         items = tuple(map(Category, values, colors, names))
         return cls(layer, attribute, items, **options)
 
-    def _symbolizer(self, color: str) -> PolygonSymbolizer:
-        return PolygonSymbolizer(Fill(color, self.fill_opacity), self.stroke, self.geometry)
-
     def to_layer(self) -> StyledLayer:
         rules = [
             Rule(
-                (self._symbolizer(item.color),),
+                (class_symbolizer(self, item.color),),
                 name=f"category-{index + 1}",
                 title=item.title,
-                filter=Compare(self.attribute, "=", item.value),
+                filter=item.filter(self.attribute),
                 scales=self.scales,
             )
             for index, item in enumerate(self.categories)
@@ -119,7 +135,7 @@ class Categories:
         if self.other is not None:
             rules.append(
                 Rule(
-                    (self._symbolizer(self.other.color),),
+                    (class_symbolizer(self, self.other.color),),
                     name="other",
                     title=self.other.title,
                     else_filter=True,
@@ -138,38 +154,26 @@ class Categories:
         body, text_rule = split_text_rules(rules)
         nulls = [rule for rule in body if isinstance(rule.filter, IsNull)]
         others = [rule for rule in body if rule.else_filter]
-        values = [rule for rule in body if rule not in nulls and rule not in others]
-        if len(nulls) > 1 or len(others) > 1 or not values:
+        valued = [rule for rule in body if rule not in nulls and rule not in others]
+        if len(nulls) > 1 or len(others) > 1 or not valued:
             raise NotRecognized("expected value rules, at most one null rule and one else rule")
         attribute: str | None = None
         shared: dict[str, Any] | None = None
-        found: list[tuple[Number | str, str, str | None]] = []
-        for rule in [*values, *others]:
+        found: list[tuple[tuple[Value, ...], str, str | None]] = []
+        for rule in [*valued, *others]:
             if rule.abstract is not None:
                 raise NotRecognized("category rules carry no abstract")
-            if not rule.else_filter:
-                compare = rule.filter
-                if not isinstance(compare, Compare) or compare.operator != "=":
-                    raise NotRecognized("category rules filter with a single equality")
-                if attribute not in (None, compare.property):
-                    raise NotRecognized("category rules use different attributes")
-                attribute = compare.property
-            polygon = only(rule.symbolizers, PolygonSymbolizer, "a category rule")
-            assert isinstance(polygon, PolygonSymbolizer)
-            if not isinstance(polygon.fill, Fill):
-                raise NotRecognized("category rules need a plain fill")
-            current = {
-                "stroke": polygon.stroke,
-                "fill_opacity": polygon.fill.opacity,
-                "geometry": polygon.geometry,
-                "scales": rule.scales,
-            }
+            prop, values = _equalities(rule.filter) if not rule.else_filter else (attribute, ())
+            if attribute not in (None, prop):
+                raise NotRecognized("category rules use different attributes")
+            attribute = prop
+            color, current = read_class_symbolizer(rule, "a category rule")
             if shared is not None and current != shared:
-                raise NotRecognized("category rules differ in stroke, opacity, geometry or scales")
+                raise NotRecognized("category rules differ in symbol, opacity, geometry or scales")
             shared = current
-            value = rule.filter.value if isinstance(rule.filter, Compare) else ""
-            found.append((value, polygon.fill.color, rule.title))
-        assert attribute is not None and shared is not None
+            found.append((values, color, rule.title))
+        if attribute is None or shared is None:
+            raise NotRecognized("no category rule names an attribute")
         other = Other(*found.pop()[1:]) if others else None
         null = (
             match_null(nulls[0], attribute, shared["scales"], shared["geometry"]) if nulls else None
@@ -189,3 +193,11 @@ class Categories:
             )
         except InvalidModel as exc:
             raise NotRecognized(str(exc)) from exc
+
+
+def _equalities(rule_filter: Filter | None) -> tuple[str, tuple[Value, ...]]:
+    parts = rule_filter.operands if isinstance(rule_filter, Or) else (rule_filter,)
+    compares = [part for part in parts if isinstance(part, Compare) and part.operator == "="]
+    if len(compares) != len(parts) or len({part.property for part in compares}) != 1:
+        raise NotRecognized("category rules filter with equalities on a single attribute")
+    return compares[0].property, tuple(part.value for part in compares)

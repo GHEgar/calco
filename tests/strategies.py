@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from hypothesis import strategies as st
 
 from calco import (
@@ -126,16 +128,27 @@ def choropleths(draw: st.DrawFn) -> Choropleth:
         breaks,
         draw(st.lists(colors, min_size=count, max_size=count)),
         draw(st.lists(optional_texts, min_size=count, max_size=count)),
-        stroke=draw(st.none() | strokes),
-        fill_opacity=draw(unit),
-        null=draw(st.none() | null_styles),
-        label=draw(st.none() | labels),
-        geometry=draw(geometries),
-        scales=draw(scale_ranges()),
-        title=draw(optional_texts),
-        abstract=draw(optional_texts),
-        style_name=draw(st.none() | names),
+        **draw(swatches()),
     )
+
+
+@st.composite
+def swatches(draw: st.DrawFn) -> dict[str, Any]:
+    kind = draw(st.sampled_from(("polygon", "line", "point")))
+    return {
+        "kind": kind,
+        "stroke": draw(st.none() | strokes),
+        "fill_opacity": draw(unit),
+        "size": draw(sizes),
+        "mark": draw(names),
+        "null": draw(st.none() | null_styles) if kind == "polygon" else None,
+        "label": draw(st.none() | labels),
+        "geometry": draw(geometries),
+        "scales": draw(scale_ranges()),
+        "title": draw(optional_texts),
+        "abstract": draw(optional_texts),
+        "style_name": draw(st.none() | names),
+    }
 
 
 headers = {
@@ -174,6 +187,8 @@ graphics = st.builds(
     size=st.none() | sizes,
     rotation=numbers,
     opacity=unit,
+    anchor=st.none() | st.tuples(unit, unit),
+    displacement=st.none() | st.tuples(numbers, numbers),
 )
 
 
@@ -194,26 +209,23 @@ category_values = st.text(alphabet="abcxyz 0123456789-_", max_size=8) | st.integ
 
 @st.composite
 def categories(draw: st.DrawFn) -> Categories:
-    values = draw(st.lists(category_values, min_size=1, max_size=6, unique_by=_category_key))
+    values = draw(st.lists(category_values, min_size=1, max_size=9, unique_by=_category_key))
+    groups: list[tuple[int | str, ...]] = []
+    while values:
+        take = draw(st.integers(1, min(3, len(values))))
+        groups.append(tuple(values[:take]))
+        values = values[take:]
     return Categories(
         draw(names),
         draw(names),
-        tuple(Category(value, draw(colors), draw(optional_texts)) for value in values),
+        tuple(Category(group, draw(colors), draw(optional_texts)) for group in groups),
         draw(st.none() | st.builds(Other, colors, optional_texts)),
-        stroke=draw(st.none() | strokes),
-        fill_opacity=draw(unit),
-        null=draw(st.none() | null_styles),
-        label=draw(st.none() | labels),
-        geometry=draw(geometries),
-        scales=draw(scale_ranges()),
-        title=draw(optional_texts),
-        abstract=draw(optional_texts),
-        style_name=draw(st.none() | names),
+        **draw(swatches()),
     )
 
 
 def _category_key(value: int | str) -> float | str:
-    return Category(value, "#000000").value
+    return Category(value, "#000000").values[0]
 
 
 @st.composite

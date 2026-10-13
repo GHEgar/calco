@@ -45,6 +45,8 @@ class Hatch:
         stroke = mark.stroke
         if stroke.linejoin or stroke.linecap or stroke.dasharray:
             raise NotRecognized("hatch stroke only carries color, width and opacity")
+        if graphic.anchor is not None or graphic.displacement is not None:
+            raise NotRecognized("a hatch graphic has no anchor and no displacement")
         if graphic.size is None or graphic.rotation != 0 or graphic.opacity != 1:
             raise NotRecognized("hatch graphic needs a size, no rotation and full opacity")
         return cls(mark.name, stroke.color, graphic.size, stroke.width, stroke.opacity)

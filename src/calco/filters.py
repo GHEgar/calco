@@ -7,6 +7,7 @@ from xml.etree.ElementTree import Element
 from calco.errors import InvalidModel
 from calco.values import (
     Number,
+    check_text,
     format_number,
     literal_value,
     parse_number,
@@ -87,8 +88,29 @@ class Between:
         set_field(self, "upper", to_number(self.upper, "Between.upper"))
 
 
-Filter = IsNull | Compare | Between | And | Or | Not
-FILTER_TYPES = (IsNull, Compare, Between, And, Or, Not)
+@dataclass(frozen=True)
+class Like:
+    property: str
+    pattern: str
+    wildcard: str = "*"
+    single_char: str = "."
+    escape: str = "!"
+
+    def __post_init__(self) -> None:
+        set_field(self, "property", required_text(self.property, "Like.property"))
+        set_field(self, "pattern", check_text(self.pattern, "Like.pattern"))
+        marks = []
+        for name in ("wildcard", "single_char", "escape"):
+            value = check_text(getattr(self, name), f"Like.{name}")
+            if len(value) != 1:
+                raise InvalidModel(f"Like.{name} must be a single character")
+            marks.append(value)
+        if len(set(marks)) != 3:
+            raise InvalidModel("Like wildcard, single_char and escape must differ")
+
+
+Filter = IsNull | Compare | Between | Like | And | Or | Not
+FILTER_TYPES = (IsNull, Compare, Between, Like, And, Or, Not)
 
 
 def _operands(value: object, field: str) -> tuple[Filter, ...]:
@@ -118,6 +140,13 @@ def _write_operation(parent: Element, rule_filter: Filter) -> None:
         sub(node, OGC, "PropertyName", rule_filter.property)
         sub(sub(node, OGC, "LowerBoundary"), OGC, "Literal", format_number(rule_filter.lower))
         sub(sub(node, OGC, "UpperBoundary"), OGC, "Literal", format_number(rule_filter.upper))
+    elif isinstance(rule_filter, Like):
+        node = sub(parent, OGC, "PropertyIsLike")
+        node.set("wildCard", rule_filter.wildcard)
+        node.set("singleChar", rule_filter.single_char)
+        node.set("escape", rule_filter.escape)
+        sub(node, OGC, "PropertyName", rule_filter.property)
+        sub(node, OGC, "Literal", rule_filter.pattern)
     elif isinstance(rule_filter, Not):
         _write_operation(sub(parent, OGC, "Not"), rule_filter.operand)
     else:
@@ -153,6 +182,8 @@ def _read_operation(reader: Reader, elem: Element, path: str) -> Filter | None:
             return None
         inner = _read_operation(reader, nodes[0], f"{path}/{local(nodes[0].tag)}")
         return None if inner is None else Not(inner)
+    if name == "PropertyIsLike":
+        return _read_like(reader, elem, nodes, path)
     if name == "PropertyIsBetween":
         return _read_between(reader, nodes, path)
     if name == "PropertyIsNull":
@@ -197,3 +228,22 @@ def _read_between(reader: Reader, nodes: list[Element], path: str) -> Filter | N
         reader.note(path, "PropertyIsBetween needs a PropertyName and two numeric boundaries")
         return None
     return Between(prop, bounds[0], bounds[1])
+
+
+def _read_like(reader: Reader, elem: Element, nodes: list[Element], path: str) -> Filter | None:
+    prop = _property(nodes, 2)
+    if prop is None or local(nodes[1].tag) != "Literal" or len(nodes[1]):
+        reader.note(path, "PropertyIsLike must be PropertyName then a plain Literal")
+        return None
+    escape = elem.get("escape") or elem.get("escapeChar") or "!"
+    try:
+        return Like(
+            prop,
+            nodes[1].text or "",
+            elem.get("wildCard") or "*",
+            elem.get("singleChar") or ".",
+            escape,
+        )
+    except InvalidModel as exc:
+        reader.note(path, str(exc))
+        return None
