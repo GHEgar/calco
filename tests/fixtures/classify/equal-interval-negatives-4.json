@@ -1,0 +1,30 @@
+{
+    "name": "equal-interval-negatives-4",
+    "values": [
+        -40.5,
+        -12,
+        -3.25,
+        0,
+        0,
+        7.5,
+        19,
+        33.3,
+        120
+    ],
+    "options": {
+        "method": "equalInterval",
+        "classes": 4
+    },
+    "expected": {
+        "breaks": [
+            -40.5,
+            -0.375,
+            39.75,
+            79.875,
+            120
+        ],
+        "requested": 4,
+        "actual": 4
+    },
+    "tolerance": 1e-9
+}

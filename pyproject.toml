@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "calco"
-version = "0.1.0"
+version = "0.2.0"
 description = "Write and parse SLD styles both ways, and translate SLD labels to MapLibre layers."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -41,11 +41,13 @@ include = ["src", "tests", "README.md", "LICENSE", "docs/CHANGELOG.md"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["geoserver: needs a running GeoServer at CALCO_GEOSERVER_URL"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+extend-exclude = ["CLAUDE.md", "AGENTS.md"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF", "ANN"]

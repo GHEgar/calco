@@ -3,6 +3,9 @@ from __future__ import annotations
 from hypothesis import strategies as st
 
 from calco import (
+    Annotation,
+    Categories,
+    Category,
     Choropleth,
     ExternalGraphic,
     Fill,
@@ -12,10 +15,12 @@ from calco import (
     Halo,
     Hatch,
     Label,
+    Line,
     LinePlacement,
     Literal,
     Mark,
     NullStyle,
+    Other,
     Point,
     PointPlacement,
     Polygon,
@@ -182,3 +187,52 @@ def points(draw: st.DrawFn) -> Point:
         draw(scale_ranges()),
         **{key: draw(value) for key, value in headers.items()},
     )
+
+
+category_values = st.text(alphabet="abcxyz 0123456789-_", max_size=8) | st.integers(-1000, 1000)
+
+
+@st.composite
+def categories(draw: st.DrawFn) -> Categories:
+    values = draw(st.lists(category_values, min_size=1, max_size=6, unique_by=_category_key))
+    return Categories(
+        draw(names),
+        draw(names),
+        tuple(Category(value, draw(colors), draw(optional_texts)) for value in values),
+        draw(st.none() | st.builds(Other, colors, optional_texts)),
+        stroke=draw(st.none() | strokes),
+        fill_opacity=draw(unit),
+        null=draw(st.none() | null_styles),
+        label=draw(st.none() | labels),
+        geometry=draw(geometries),
+        scales=draw(scale_ranges()),
+        title=draw(optional_texts),
+        abstract=draw(optional_texts),
+        style_name=draw(st.none() | names),
+    )
+
+
+def _category_key(value: int | str) -> float | str:
+    return Category(value, "#000000").value
+
+
+@st.composite
+def lines(draw: st.DrawFn) -> Line:
+    return Line(
+        draw(names),
+        tuple(draw(st.lists(strokes, min_size=1, max_size=3))),
+        draw(st.none() | labels),
+        draw(geometries),
+        draw(scale_ranges()),
+        **{key: draw(value) for key, value in headers.items()},
+    )
+
+
+annotation_styles = st.builds(
+    Annotation,
+    layer=names,
+    label=labels,
+    title=optional_texts,
+    abstract=optional_texts,
+    style_name=st.none() | names,
+)

@@ -15,13 +15,14 @@ from calco.model import (
 )
 from calco.symbolizer_io import SYMBOLIZER_TAGS, read_symbolizer, write_symbolizer
 from calco.symbolizers import Symbolizer
-from calco.xmltools import PREFIXES, SLD, Reader, local, sub, sub_number
+from calco.xmltools import PREFIXES, SLD, Children, Reader, local, sub, sub_number
 
 DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>'
 RULE_CHILDREN = (
     "Name",
     "Title",
     "Abstract",
+    "Description",
     "Filter",
     "ElseFilter",
     "MinScaleDenominator",
@@ -148,7 +149,7 @@ def _read_layer(elem: Element, path: str) -> StyledLayer | str:
 def _read_user_style(elem: Element, path: str) -> UserStyle | list[str]:
     reader = Reader()
     inner = reader.children(
-        elem, path, ("Name", "Title", "Abstract", "IsDefault", "FeatureTypeStyle")
+        elem, path, ("Name", "Title", "Abstract", "Description", "IsDefault", "FeatureTypeStyle")
     )
     styles = [_read_style(reader, *item) for item in inner.get("FeatureTypeStyle", [])]
     kept = tuple(style for style in styles if style is not None)
@@ -159,15 +160,17 @@ def _read_user_style(elem: Element, path: str) -> UserStyle | list[str]:
     return UserStyle(
         kept,
         name=reader.text(inner, "Name"),
-        title=reader.text(inner, "Title"),
-        abstract=reader.text(inner, "Abstract"),
+        **_describe(reader, inner),
         is_default=default,
         unsupported=tuple(reader.unsupported),
     )
 
 
 def _read_style(reader: Reader, elem: Element, path: str) -> FeatureTypeStyle | None:
-    groups = reader.children(elem, path, ("Name", "Rule"))
+    groups = reader.children(elem, path, ("Name", "Rule", "Description", "FeatureTypeName"))
+    for tag in ("Description", "FeatureTypeName"):
+        for _, ignored in groups.get(tag, []):
+            reader.note(ignored, "FeatureTypeStyle metadata is not kept")
     rules = [_read_rule(reader, *item) for item in groups.get("Rule", [])]
     kept = tuple(rule for rule in rules if rule is not None)
     if not kept:
@@ -200,8 +203,7 @@ def _read_rule(reader: Reader, elem: Element, path: str) -> Rule | None:
         return Rule(
             tuple(symbolizers),
             name=reader.text(groups, "Name"),
-            title=reader.text(groups, "Title"),
-            abstract=reader.text(groups, "Abstract"),
+            **_describe(reader, groups),
             filter=rule_filter,
             else_filter=reader.one(groups, "ElseFilter") is not None,
             scales=ScaleRange(
@@ -212,3 +214,18 @@ def _read_rule(reader: Reader, elem: Element, path: str) -> Rule | None:
     except InvalidModel as exc:
         reader.note(path, f"rule dropped: {exc}")
         return None
+
+
+def _describe(reader: Reader, groups: Children) -> dict[str, str | None]:
+    found = {"title": reader.text(groups, "Title"), "abstract": reader.text(groups, "Abstract")}
+    description = reader.one(groups, "Description")
+    if description is None:
+        return found
+    inner = reader.children(description[0], description[1], ("Title", "Abstract"))
+    for key, tag in (("title", "Title"), ("abstract", "Abstract")):
+        value = reader.text(inner, tag)
+        if value is not None and found[key] is not None:
+            reader.note(description[1], f"{tag} given twice; the SE 1.1 Description wins")
+        if value is not None:
+            found[key] = value
+    return found

@@ -8,13 +8,21 @@ from calco.model import Rule, ScaleRange, StyledLayer, UserStyle
 from calco.recipes.common import build_layer, only, single_style, split_text_rules
 from calco.recipes.fills import Hatch, as_fill, from_fill
 from calco.recipes.label import Label
-from calco.symbolizers import Fill, Graphic, PointSymbolizer, PolygonSymbolizer, Stroke, Symbolizer
+from calco.symbolizers import (
+    Fill,
+    Graphic,
+    LineSymbolizer,
+    PointSymbolizer,
+    PolygonSymbolizer,
+    Stroke,
+    Symbolizer,
+)
 from calco.values import optional_text, required_text, set_field
 
 HEADER = ("title", "abstract", "style_name", "rule_name", "rule_title")
 
 
-def _check_common(target: Polygon | Point, kind: str) -> None:
+def _check_common(target: Polygon | Point | Line, kind: str) -> None:
     set_field(target, "layer", required_text(target.layer, f"{kind}.layer"))
     label = target.label
     if label is not None and not isinstance(label, Label):
@@ -26,10 +34,10 @@ def _check_common(target: Polygon | Point, kind: str) -> None:
         set_field(target, name, optional_text(getattr(target, name), f"{kind}.{name}"))
 
 
-def _layer(target: Polygon | Point, symbolizer: Symbolizer) -> StyledLayer:
+def _layer(target: Polygon | Point | Line, *symbolizers: Symbolizer) -> StyledLayer:
     rules = [
         Rule(
-            (symbolizer,),
+            symbolizers,
             name=target.rule_name,
             title=target.rule_title,
             scales=target.scales,
@@ -143,6 +151,53 @@ class Point:
             point.graphic,
             label,
             point.geometry,
+            rule.scales,
+            **_header(user_style, rule),
+        )
+
+
+@dataclass(frozen=True)
+class Line:
+    layer: str
+    strokes: tuple[Stroke, ...] | Stroke = Stroke()
+    label: Label | None = None
+    geometry: Expression | None = None
+    scales: ScaleRange = ScaleRange()
+    title: str | None = None
+    abstract: str | None = None
+    style_name: str | None = None
+    rule_name: str | None = None
+    rule_title: str | None = None
+
+    def __post_init__(self) -> None:
+        _check_common(self, "Line")
+        strokes = (self.strokes,) if isinstance(self.strokes, Stroke) else self.strokes
+        if not isinstance(strokes, tuple | list) or not strokes:
+            raise InvalidModel("Line.strokes needs at least one Stroke")
+        if not all(isinstance(item, Stroke) for item in strokes):
+            raise InvalidModel("Line.strokes has a non-Stroke item")
+        set_field(self, "strokes", tuple(strokes))
+
+    @property
+    def stroke_list(self) -> tuple[Stroke, ...]:
+        return self.strokes if isinstance(self.strokes, tuple) else (self.strokes,)
+
+    def to_layer(self) -> StyledLayer:
+        return _layer(self, *(LineSymbolizer(item, self.geometry) for item in self.stroke_list))
+
+    @classmethod
+    def from_layer(cls, layer: StyledLayer, style: str | None = None) -> Line:
+        user_style, rule, label = _main_rule(layer, style)
+        lines = [item for item in rule.symbolizers if isinstance(item, LineSymbolizer)]
+        if len(lines) != len(rule.symbolizers):
+            raise NotRecognized("the line rule holds only LineSymbolizers")
+        if len({item.geometry for item in lines}) != 1:
+            raise NotRecognized("the line symbolizers use different geometries")
+        return cls(
+            layer.name,
+            tuple(item.stroke for item in lines),
+            label,
+            lines[0].geometry,
             rule.scales,
             **_header(user_style, rule),
         )

@@ -116,3 +116,16 @@ class NullStyle:
         else:
             style = cls(rule.title, last.fill, None, last.stroke)
         return style, last.geometry
+
+
+def match_null(
+    rule: Rule, attribute: str, scales: ScaleRange, geometry: Expression | None
+) -> NullStyle:
+    if not isinstance(rule.filter, IsNull) or rule.filter.property != attribute:
+        raise NotRecognized("the null rule uses another attribute")
+    if rule.scales != scales:
+        raise NotRecognized("the null rule uses other scales")
+    style, found = NullStyle.from_rule(rule)
+    if found != geometry:
+        raise NotRecognized("the null rule uses another geometry")
+    return style

@@ -1,0 +1,14 @@
+{
+    "name": "empty",
+    "values": [],
+    "options": {
+        "method": "quantile",
+        "classes": 5
+    },
+    "expected": {
+        "breaks": [],
+        "requested": 5,
+        "actual": 0
+    },
+    "tolerance": 1e-9
+}

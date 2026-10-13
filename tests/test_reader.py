@@ -4,6 +4,7 @@ import pytest
 
 from calco import (
     And,
+    Annotation,
     Between,
     Choropleth,
     Compare,
@@ -15,6 +16,7 @@ from calco import (
     Polygon,
     PolygonSymbolizer,
     Property,
+    ScaleRange,
     Stroke,
     TextSymbolizer,
     Unrecognized,
@@ -143,7 +145,9 @@ def test_keeps_string_comparisons() -> None:
         "</ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><PolygonSymbolizer/></Rule>"
     )
     rule = parse(xml).layers[0].rules[0]
-    assert rule.filter == And((Compare("tipo", "=", "urbano"), Compare("pob", ">", 1000)))
+    assert rule.filter == And((Compare("tipo", "=", "urbano"), Compare("pob", ">", "1e3")))
+    assert Compare("cve", "=", "001").value == "001"
+    assert Compare("cve", "=", "15").value == 15
 
 
 def test_reads_named_styles() -> None:
@@ -156,12 +160,15 @@ def test_reads_named_styles() -> None:
     assert parse(write(document)) == document
 
 
-def test_a_label_only_style_is_not_a_recipe_yet() -> None:
+def test_a_label_only_style_is_an_annotation() -> None:
     xml = sld(
         "<Rule><TextSymbolizer><Label><ogc:PropertyName>n</ogc:PropertyName></Label>"
         "</TextSymbolizer></Rule>"
     )
-    assert isinstance(recognize(parse(xml)), Unrecognized)
+    result = recognize(parse(xml))
+    assert isinstance(result, Annotation)
+    assert result.label.content == (Property("n"),)
+    assert result.title == "Estilo"
 
 
 def test_a_polygon_with_plain_fill() -> None:
@@ -226,3 +233,39 @@ def test_labels_are_written_without_indentation() -> None:
         "<ogc:PropertyName>b</ogc:PropertyName></sld:Label>"
     ) in xml
     assert recognize(parse(xml)) == recipe
+
+
+SE_SLD = """<StyledLayerDescriptor version="1.1.0" xmlns="http://www.opengis.net/sld"
+  xmlns:se="http://www.opengis.net/se" xmlns:ogc="http://www.opengis.net/ogc"
+  xmlns:xlink="http://www.w3.org/1999/xlink">
+  <NamedLayer><se:Name>capa</se:Name>
+    <UserStyle><se:Name>estilo</se:Name>
+      <se:Description><se:Title>Título</se:Title><se:Abstract>Resumen</se:Abstract></se:Description>
+      <se:FeatureTypeStyle><se:Rule><se:Name>r</se:Name>
+        <se:Description><se:Title>Regla</se:Title></se:Description>
+        <se:MaxScaleDenominator>100000</se:MaxScaleDenominator>
+        <se:PolygonSymbolizer>
+          <se:Fill><se:SvgParameter name="fill">#ff0000</se:SvgParameter></se:Fill>
+          <se:Stroke><se:SvgParameter name="stroke">#000000</se:SvgParameter>
+            <se:SvgParameter name="stroke-width">2</se:SvgParameter></se:Stroke>
+        </se:PolygonSymbolizer>
+      </se:Rule></se:FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>"""
+
+
+def test_reads_symbology_encoding_1_1() -> None:
+    document = parse(SE_SLD)
+    assert document.all_unsupported == ()
+    assert recognize(document) == Polygon(
+        "capa",
+        Fill("#FF0000"),
+        Stroke("#000000", 2),
+        scales=ScaleRange(None, 100000),
+        title="Título",
+        abstract="Resumen",
+        style_name="estilo",
+        rule_name="r",
+        rule_title="Regla",
+    )

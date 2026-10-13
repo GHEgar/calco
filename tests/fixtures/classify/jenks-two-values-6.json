@@ -1,0 +1,21 @@
+{
+    "name": "jenks-two-values-6",
+    "values": [
+        1,
+        5
+    ],
+    "options": {
+        "method": "jenks",
+        "classes": 6
+    },
+    "expected": {
+        "breaks": [
+            1,
+            5,
+            5
+        ],
+        "requested": 6,
+        "actual": 2
+    },
+    "tolerance": 1e-9
+}

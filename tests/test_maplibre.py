@@ -95,10 +95,10 @@ def test_line_placement_and_custom_fonts() -> None:
 
 
 def test_skips_functions_without_equivalent() -> None:
-    label = Label(Function("strToUpperCase", (Property("n"),)))
+    label = Label(Function("strCapitalize", (Property("n"),)))
     result = label_layers(styled(label).to_layer(), source="s")
     assert result.layers == []
-    assert "strToUpperCase" in result.skipped[0].reason
+    assert "strCapitalize" in result.skipped[0].reason
 
 
 def test_concatenate_is_flattened() -> None:
@@ -188,3 +188,40 @@ def test_ambiguous_user_styles_are_reported() -> None:
     result = label_layers(parse(xml), source="s")
     assert result.layers == []
     assert "none default" in result.skipped[0].reason
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (Function("strToUpperCase", (Property("n"),)), ["upcase", ["to-string", ["get", "n"]]]),
+        (
+            Function("strSubstring", (Property("n"), Literal("0"), Literal("3"))),
+            ["slice", ["to-string", ["get", "n"]], 0, 3],
+        ),
+        (
+            Function("numberFormat", (Literal("#,##0.0#"), Property("pob"), Literal("es-MX"))),
+            [
+                "number-format",
+                ["to-number", ["get", "pob"]],
+                {"min-fraction-digits": 1, "max-fraction-digits": 2, "locale": "es-MX"},
+            ],
+        ),
+    ],
+)
+def test_label_functions_with_an_equivalent(content: Function, expected: list[object]) -> None:
+    (layer,) = label_layers(styled(Label(content)).to_layer(), source="s").layers
+    assert layer["layout"]["text-field"] == expected
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        Function("numberFormat", (Literal("0.00"), Property("pob"))),
+        Function("strSubstring", (Property("n"), Property("a"), Literal("3"))),
+        Function("strCapitalize", (Property("n"),)),
+    ],
+)
+def test_label_functions_without_a_faithful_equivalent(content: Function) -> None:
+    result = label_layers(styled(Label(content)).to_layer(), source="s")
+    assert result.layers == []
+    assert result.skipped

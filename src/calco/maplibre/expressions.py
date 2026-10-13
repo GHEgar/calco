@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from calco.expressions import Expression, Function, Literal, Property
 from calco.filters import And, Between, Compare, Filter, IsNull, Not, Or
+from calco.values import parse_number
 
 CONCAT_FUNCTIONS = ("Concatenate", "concatenate", "strConcat", "concat")
+CASE_FUNCTIONS = {"strToUpperCase": "upcase", "strToLowerCase": "downcase"}
+NUMBER_PATTERN = re.compile(r"(?P<integer>[#,]*0[0,]*)(?:\.(?P<required>0*)(?P<optional>#*))?")
 OPERATORS = {"=": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">="}
 
 
@@ -16,16 +20,62 @@ class Untranslatable(Exception):
 def _flatten(parts: tuple[Expression, ...]) -> list[Any]:
     found: list[Any] = []
     for part in parts:
-        if isinstance(part, Property):
-            found.append(["to-string", ["get", part.name]])
-        elif isinstance(part, Literal):
-            found.append(part.value)
-        elif isinstance(part, Function) and part.name in CONCAT_FUNCTIONS:
+        if isinstance(part, Function) and part.name in CONCAT_FUNCTIONS:
             found.extend(_flatten(part.args))
         else:
-            assert isinstance(part, Function)
-            raise Untranslatable(f"label function {part.name} has no MapLibre equivalent")
+            found.append(_text(part))
     return found
+
+
+def _text(part: Expression) -> Any:
+    if isinstance(part, Literal):
+        return part.value
+    if isinstance(part, Property):
+        return ["to-string", ["get", part.name]]
+    name, args = part.name, part.args
+    if name in CONCAT_FUNCTIONS:
+        return ["concat", *_flatten(args)]
+    if name in CASE_FUNCTIONS and len(args) == 1:
+        return [CASE_FUNCTIONS[name], _text(args[0])]
+    if name in ("strSubstring", "strSubstringStart") and len(args) == (
+        3 if name == "strSubstring" else 2
+    ):
+        return ["slice", _text(args[0]), *(_index(arg, name) for arg in args[1:])]
+    if name == "numberFormat" and len(args) in (2, 3):
+        return _number_format(args)
+    raise Untranslatable(f"label function {name} has no MapLibre equivalent")
+
+
+def _index(arg: Expression, name: str) -> int:
+    value = parse_number(arg.value) if isinstance(arg, Literal) else None
+    if not isinstance(value, int) or value < 0:
+        raise Untranslatable(f"{name} needs literal, non-negative integer positions")
+    return value
+
+
+def _number_format(args: tuple[Expression, ...]) -> list[Any]:
+    pattern = args[0]
+    if not isinstance(pattern, Literal):
+        raise Untranslatable("numberFormat needs a literal pattern")
+    match = NUMBER_PATTERN.fullmatch(pattern.value.strip())
+    if match is None or "," not in match.group("integer"):
+        raise Untranslatable(
+            f"numberFormat pattern {pattern.value!r} has no MapLibre equivalent: "
+            "MapLibre always groups digits and only controls fraction digits"
+        )
+    required, optional = match.group("required") or "", match.group("optional") or ""
+    options: dict[str, Any] = {
+        "min-fraction-digits": len(required),
+        "max-fraction-digits": len(required) + len(optional),
+    }
+    if len(args) == 3:
+        language = args[2]
+        if not isinstance(language, Literal):
+            raise Untranslatable("numberFormat needs a literal language")
+        options["locale"] = language.value
+    value = args[1]
+    source = ["get", value.name] if isinstance(value, Property) else _text(value)
+    return ["number-format", ["to-number", source], options]
 
 
 def text_field(parts: tuple[Expression, ...]) -> str | list[Any]:

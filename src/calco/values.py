@@ -75,6 +75,14 @@ def parse_number(text: str) -> Number | None:
         return None
 
 
+def literal_value(value: object, field: str) -> Number | str:
+    if isinstance(value, str):
+        check_text(value, field)
+        number = parse_number(value)
+        return number if number is not None and format_number(number) == value else value
+    return to_number(value, field)
+
+
 def to_color(value: object, field: str) -> str:
     if not isinstance(value, str):
         raise InvalidModel(f"{field} must be a hex color, got {value!r}")

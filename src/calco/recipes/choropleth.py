@@ -4,12 +4,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from calco.classify import Classification
 from calco.errors import InvalidModel, NotRecognized
 from calco.expressions import Expression, optional_expression
 from calco.filters import And, Compare, Filter, IsNull
 from calco.model import Rule, ScaleRange, StyledLayer
 from calco.recipes.common import build_layer, only, single_style, split_text_rules
-from calco.recipes.fills import NullStyle
+from calco.recipes.fills import NullStyle, match_null
 from calco.recipes.label import Label
 from calco.symbolizers import Fill, PolygonSymbolizer, Stroke
 from calco.values import (
@@ -17,6 +18,7 @@ from calco.values import (
     in_range,
     optional_number,
     optional_text,
+    parse_number,
     required_text,
     set_field,
     to_color,
@@ -35,8 +37,8 @@ class RangeClass:
         set_field(self, "upper", optional_number(self.upper, "RangeClass.upper"))
         set_field(self, "color", to_color(self.color, "RangeClass.color"))
         set_field(self, "title", optional_text(self.title, "RangeClass.title"))
-        if self.lower is not None and self.upper is not None and self.lower >= self.upper:
-            raise InvalidModel(f"class lower {self.lower} must be below upper {self.upper}")
+        if self.lower is not None and self.upper is not None and self.lower > self.upper:
+            raise InvalidModel(f"class lower {self.lower} must not exceed upper {self.upper}")
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,20 @@ class Choropleth:
         )
         return cls(layer, attribute, classes, **options)
 
+    @classmethod
+    def from_classification(
+        cls,
+        layer: str,
+        attribute: str,
+        classification: Classification,
+        colors: Sequence[str],
+        titles: Sequence[str | None] | None = None,
+        **options: Any,
+    ) -> Choropleth:
+        if classification.actual < 1:
+            raise InvalidModel("the classification has no classes")
+        return cls.from_breaks(layer, attribute, classification.breaks, colors, titles, **options)
+
     @property
     def breaks(self) -> tuple[float | None, ...]:
         return (self.classes[0].lower, *(item.upper for item in self.classes))
@@ -130,13 +146,7 @@ class Choropleth:
         attribute, classes, shared = _read_classes(range_rules)
         null = None
         if null_rules:
-            rule = null_rules[0]
-            assert isinstance(rule.filter, IsNull)
-            if rule.filter.property != attribute or rule.scales != shared["scales"]:
-                raise NotRecognized("the null rule uses another attribute or other scales")
-            null, geometry = NullStyle.from_rule(rule)
-            if geometry != shared["geometry"]:
-                raise NotRecognized("the null rule uses another geometry")
+            null = match_null(null_rules[0], attribute, shared["scales"], shared["geometry"])
         try:
             return cls(
                 layer.name,
@@ -164,6 +174,9 @@ def _check_classes(value: object) -> tuple[RangeClass, ...]:
             raise InvalidModel("only the first class may have an open lower bound")
         if item.upper is None and index < len(classes) - 1:
             raise InvalidModel("only the last class may have an open upper bound")
+        last = index == len(classes) - 1
+        if not last and item.lower is not None and item.lower == item.upper:
+            raise InvalidModel(f"class {index + 1} is empty; only the last class may be [x, x]")
         if index > 0 and classes[index - 1].upper != item.lower:
             raise InvalidModel(f"class {index + 1} does not start where class {index} ends")
     if len(classes) == 1 and classes[0].lower is None and classes[0].upper is None:
@@ -191,11 +204,11 @@ def _bounds(rule_filter: Filter | None) -> tuple[str, Number | None, Number | No
     upper = [part for part in compares if part.operator in ("<", "<=")]
     if len(lower) + len(upper) != len(compares) or len(lower) > 1 or len(upper) > 1:
         raise NotRecognized("range rules use >= for the lower bound and < or <= for the upper")
-    values = [part.value for part in compares]
-    if any(isinstance(value, str) for value in values):
+    values = [_as_number(part.value) for part in compares]
+    if any(value is None for value in values):
         raise NotRecognized("range bounds must be numbers")
-    low = lower[0].value if lower else None
-    high = upper[0].value if upper else None
+    low = _as_number(lower[0].value) if lower else None
+    high = _as_number(upper[0].value) if upper else None
     assert not isinstance(low, str) and not isinstance(high, str)
     return compares[0].property, low, high, upper[0].operator if upper else None
 
@@ -233,3 +246,7 @@ def _read_classes(rules: list[Rule]) -> tuple[str, tuple[RangeClass, ...], dict[
             raise NotRecognized(str(exc)) from exc
     assert attribute is not None and shared is not None
     return attribute, tuple(classes), shared
+
+
+def _as_number(value: Number | str) -> Number | None:
+    return parse_number(value) if isinstance(value, str) else value

@@ -75,9 +75,13 @@ def test_choropleth_rejects_bad_classes(classes: tuple[RangeClass, ...]) -> None
         Choropleth("l", "a", classes)
 
 
-def test_range_class_needs_increasing_bounds() -> None:
+def test_range_class_bounds() -> None:
     with pytest.raises(InvalidModel):
-        RangeClass(5, 5, "#000000")
+        RangeClass(5, 4, "#000000")
+    with pytest.raises(InvalidModel, match="only the last class"):
+        Choropleth("l", "a", (RangeClass(1, 1, "#000000"), RangeClass(1, 2, "#000000")))
+    last = Choropleth("l", "a", (RangeClass(0, 1, "#000000"), RangeClass(1, 1, "#000000")))
+    assert last.breaks == (0, 1, 1)
 
 
 def test_other_validations() -> None:

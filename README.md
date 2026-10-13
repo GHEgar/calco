@@ -6,8 +6,9 @@ to [MapLibre](https://maplibre.org/) symbol layers.
 - **Round trip as a contract**: every recipe satisfies `recognize(parse(write(style))) == style`.
 - **Nothing is lost silently**: whatever the reader does not understand is reported with its path.
 - **No runtime dependencies**: the standard library's `xml.etree` and frozen dataclasses.
-- Writes SLD 1.0.0, the version GeoServer handles best; reads 1.0.0 and tolerates SE 1.1
-  `SvgParameter`.
+- Writes SLD 1.0.0, the version GeoServer handles best; reads SLD 1.0.0 and SLD 1.1 / SE 1.1.
+- Classification (quantile, Jenks, equal interval, standard deviation) ported from
+  `@ghegar/panal/classify` and checked against its test vectors.
 
 ```bash
 pip install calco
@@ -40,7 +41,37 @@ xml = write(style.to_layer())
 
 The null rule draws a plain background and a hatch on top, each with its own stroke.
 
-### Single polygon and points
+### Classifying the values first
+
+```python
+from calco import classify
+
+result = classify(densities, "jenks", classes=5)
+style = Choropleth.from_classification("municipalities", "density", result, colors)
+```
+
+`classify` supports `quantile`, `jenks`, `equalInterval`, `stdDev` (`std_dev_interval=1` or `0.5`)
+and `manual`. `class_of` and `legend` use the same interval rule as the SLD: `>= lower`, `< upper`,
+the last class closed. A degenerate last class (`[x, x]`) is allowed, as classification can produce it.
+
+### Categories by value
+
+```python
+from calco import Categories, Other
+
+style = Categories.from_values(
+    "states",
+    "region",
+    ["Pacific", "Mountain"],
+    ["#1B9E77", "#D95F02"],
+    other=Other("#DDDDDD", "Other regions"),
+)
+```
+
+Each category is an equality rule; `other` becomes an `ElseFilter` rule. Values written as canonical
+numbers (`15`) read back as numbers; anything else (`"001"`) stays text.
+
+### Single polygon, lines, points and labels only
 
 ```python
 from calco import ExternalGraphic, Fill, Graphic, Mark, Point, Polygon, ScaleRange
@@ -51,7 +82,11 @@ outline = Polygon(
 hatched = Polygon("reserves", fill=Hatch("shape://slash"), stroke=None)
 wells = Point("wells", Graphic(Mark("circle", Fill("#1F77B4"), None), size=8))
 icons = Point("schools", Graphic(ExternalGraphic("https://example.org/school.png"), size=16))
+roads = Line("roads", (Stroke("#333333", 5), Stroke("#FFD966", 3)))
+names = Annotation("cities", Label(Property("name"), halo=Halo(1.5)))
 ```
+
+A `Line` with several strokes draws them in order, which gives a cased road.
 
 ### Geometry and label expressions
 
@@ -84,7 +119,7 @@ if isinstance(style, Unrecognized):
 
 `parse` returns a generic model (`StyledLayerDescriptor`, `StyledLayer`, `UserStyle`,
 `FeatureTypeStyle`, `Rule`, filters and symbolizers) that `write` turns back into XML. `recognize`
-tries `Choropleth`, `Polygon` and `Point`, and returns the first that matches with nothing left over,
+tries `Choropleth`, `Categories`, `Polygon`, `Line`, `Point` and `Annotation`, and returns the first that matches with nothing left over,
 or `Unrecognized` with the reason each recipe gave.
 
 A WMS `GetStyles` response lists every style of the layer. `recognize(document, "style_name")` picks
@@ -115,8 +150,10 @@ wms_body = strip_text(xml)
 Every `TextSymbolizer` becomes a `symbol` layer with native `text-*` properties: content, font, color,
 halo, anchor, displacement, line placement, scale denominators as `minzoom`/`maxzoom`, filters and
 `ElseFilter`, and the vendor options that have an equivalent (`autoWrap`, `spaceAround`, `followLine`,
-`repeat`, `conflictResolution`, `maxAngleDelta`). A rule that cannot be translated faithfully, such as
-one with a label function MapLibre does not have, is skipped and reported instead of drawn wrong.
+`repeat`, `conflictResolution`, `maxAngleDelta`). Label functions with an exact equivalent are
+translated: `Concatenate`, `strToUpperCase`, `strToLowerCase`, `strSubstring`, `strSubstringStart`,
+and `numberFormat` when its pattern groups digits (MapLibre always does). A rule that cannot be
+translated faithfully is skipped and reported instead of drawn wrong.
 
 `text-font` must name a fontstack your glyph server has. The default is `"<family> <Regular|Bold|
 Italic|Bold Italic>"`; pass `fonts=lambda font: [...]` to map them yourself.
@@ -134,6 +171,15 @@ pip install -e '.[dev]'
 pytest
 ruff check . && ruff format --check .
 mypy
+```
+
+Tests marked `geoserver` run against a live GeoServer with its sample data, and are skipped
+otherwise:
+
+```bash
+docker run -d --rm --name calco-geoserver -p 8599:8080 -e SAMPLE_DATA=true \
+    -e GEOSERVER_ADMIN_PASSWORD=geoserver kartoza/geoserver:3.0.0
+CALCO_GEOSERVER_URL=http://localhost:8599/geoserver pytest -m geoserver
 ```
 
 ## License

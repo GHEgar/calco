@@ -1,0 +1,30 @@
+{
+    "name": "quantile-gaps-3",
+    "values": [
+        5,
+        null,
+        2,
+        "NaN",
+        8,
+        "Infinity",
+        1,
+        13,
+        21,
+        3
+    ],
+    "options": {
+        "method": "quantile",
+        "classes": 3
+    },
+    "expected": {
+        "breaks": [
+            1,
+            3,
+            8,
+            21
+        ],
+        "requested": 3,
+        "actual": 3
+    },
+    "tolerance": 1e-9
+}

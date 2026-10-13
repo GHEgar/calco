@@ -1,9 +1,30 @@
+from calco.classify import Classification, class_of, classify, legend
 from calco.document import parse, write
 from calco.errors import CalcoError, InvalidModel, NotRecognized, ParseError
 from calco.expressions import Expression, Function, Literal, Property
 from calco.filters import And, Between, Compare, Filter, IsNull, Not, Or
-from calco.model import FeatureTypeStyle, Rule, ScaleRange, StyledLayer, StyledLayerDescriptor
-from calco.recipes import Choropleth, Hatch, Label, NullStyle, Point, Polygon, RangeClass
+from calco.model import (
+    FeatureTypeStyle,
+    Rule,
+    ScaleRange,
+    StyledLayer,
+    StyledLayerDescriptor,
+    UserStyle,
+)
+from calco.recipes import (
+    Annotation,
+    Categories,
+    Category,
+    Choropleth,
+    Hatch,
+    Label,
+    Line,
+    NullStyle,
+    Other,
+    Point,
+    Polygon,
+    RangeClass,
+)
 from calco.recognize import Recipe, Unrecognized, recognize
 from calco.symbolizers import (
     ExternalGraphic,
@@ -23,13 +44,17 @@ from calco.symbolizers import (
     TextSymbolizer,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "And",
+    "Annotation",
     "Between",
     "CalcoError",
+    "Categories",
+    "Category",
     "Choropleth",
+    "Classification",
     "Compare",
     "Expression",
     "ExternalGraphic",
@@ -45,6 +70,7 @@ __all__ = [
     "InvalidModel",
     "IsNull",
     "Label",
+    "Line",
     "LinePlacement",
     "LineSymbolizer",
     "Literal",
@@ -53,6 +79,7 @@ __all__ = [
     "NotRecognized",
     "NullStyle",
     "Or",
+    "Other",
     "ParseError",
     "Point",
     "PointPlacement",
@@ -70,6 +97,10 @@ __all__ = [
     "Symbolizer",
     "TextSymbolizer",
     "Unrecognized",
+    "UserStyle",
+    "class_of",
+    "classify",
+    "legend",
     "parse",
     "recognize",
     "write",

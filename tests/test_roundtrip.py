@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from hypothesis import given, settings
 
-from calco import Choropleth, Point, Polygon, parse, recognize, write
-from tests.strategies import choropleths, points, polygons
-
-Recipe = Choropleth | Polygon | Point
+from calco import Annotation, Categories, Choropleth, Line, Point, Polygon, parse, recognize, write
+from calco.recognize import Recipe
+from tests.strategies import annotation_styles, categories, choropleths, lines, points, polygons
 
 
 def assert_round_trip(recipe: Recipe) -> None:
@@ -32,4 +31,22 @@ def test_polygon_round_trip(recipe: Polygon) -> None:
 @settings(max_examples=200)
 @given(points())
 def test_point_round_trip(recipe: Point) -> None:
+    assert_round_trip(recipe)
+
+
+@settings(max_examples=300)
+@given(categories())
+def test_categories_round_trip(recipe: Categories) -> None:
+    assert_round_trip(recipe)
+
+
+@settings(max_examples=200)
+@given(lines())
+def test_line_round_trip(recipe: Line) -> None:
+    assert_round_trip(recipe)
+
+
+@settings(max_examples=100)
+@given(annotation_styles)
+def test_annotation_round_trip(recipe: Annotation) -> None:
     assert_round_trip(recipe)

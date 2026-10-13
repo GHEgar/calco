@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 
 from calco.errors import NotRecognized
 from calco.model import StyledLayer, StyledLayerDescriptor
-from calco.recipes import Choropleth, Point, Polygon
+from calco.recipes import Annotation, Categories, Choropleth, Line, Point, Polygon
 
-Recipe = Choropleth | Polygon | Point
-RECIPES: tuple[type[Choropleth] | type[Polygon] | type[Point], ...] = (Choropleth, Polygon, Point)
+Recipe = Choropleth | Categories | Polygon | Line | Point | Annotation
+RECIPES: tuple[type[Recipe], ...] = (Choropleth, Categories, Polygon, Line, Point, Annotation)
 
 
 @dataclass(frozen=True)

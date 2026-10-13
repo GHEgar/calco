@@ -7,8 +7,8 @@ from xml.etree.ElementTree import Element
 from calco.errors import InvalidModel
 from calco.values import (
     Number,
-    check_text,
     format_number,
+    literal_value,
     parse_number,
     required_text,
     set_field,
@@ -47,10 +47,7 @@ class Compare:
         set_field(self, "property", required_text(self.property, "Compare.property"))
         if self.operator not in TAGS:
             raise InvalidModel(f"Compare.operator must be one of {', '.join(TAGS)}")
-        if isinstance(self.value, str):
-            check_text(self.value, "Compare.value")
-        else:
-            set_field(self, "value", to_number(self.value, "Compare.value"))
+        set_field(self, "value", literal_value(self.value, "Compare.value"))
 
 
 @dataclass(frozen=True)
@@ -175,9 +172,7 @@ def _read_compare(reader: Reader, nodes: list[Element], name: str, path: str) ->
     if prop is None or local(nodes[1].tag) != "Literal" or len(nodes[1]):
         reader.note(path, "comparison must be PropertyName then a plain Literal")
         return None
-    raw = nodes[1].text or ""
-    number = parse_number(raw)
-    return Compare(prop, OPERATORS[name], raw if number is None else number)
+    return Compare(prop, OPERATORS[name], nodes[1].text or "")
 
 
 def _property(nodes: list[Element], count: int) -> str | None:

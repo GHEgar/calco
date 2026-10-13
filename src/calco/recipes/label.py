@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 from calco.errors import InvalidModel, NotRecognized
 from calco.expressions import Expression, as_expressions, optional_expression
-from calco.model import Rule, ScaleRange
-from calco.recipes.common import only
+from calco.model import Rule, ScaleRange, StyledLayer
+from calco.recipes.common import build_layer, only, single_style, split_text_rules
 from calco.symbolizers import (
     Fill,
     Font,
@@ -15,7 +15,7 @@ from calco.symbolizers import (
     TextSymbolizer,
     vendor_options,
 )
-from calco.values import set_field
+from calco.values import optional_text, required_text, set_field
 
 
 @dataclass(frozen=True)
@@ -71,4 +71,43 @@ class Label:
             geometry=text.geometry,
             vendor_options=text.vendor_options,
             scales=rule.scales,
+        )
+
+
+@dataclass(frozen=True)
+class Annotation:
+    layer: str
+    label: Label
+    title: str | None = None
+    abstract: str | None = None
+    style_name: str | None = None
+
+    def __post_init__(self) -> None:
+        set_field(self, "layer", required_text(self.layer, "Annotation.layer"))
+        if not isinstance(self.label, Label):
+            raise InvalidModel("Annotation.label must be a Label")
+        for name in ("title", "abstract", "style_name"):
+            set_field(self, name, optional_text(getattr(self, name), f"Annotation.{name}"))
+
+    def to_layer(self) -> StyledLayer:
+        return build_layer(
+            self.layer,
+            [self.label.to_rule()],
+            style_name=self.style_name,
+            title=self.title,
+            abstract=self.abstract,
+        )
+
+    @classmethod
+    def from_layer(cls, layer: StyledLayer, style: str | None = None) -> Annotation:
+        user_style, rules = single_style(layer, style)
+        body, text_rule = split_text_rules(rules)
+        if body or text_rule is None:
+            raise NotRecognized("an annotation style holds a single label rule")
+        return cls(
+            layer.name,
+            Label.from_rule(text_rule),
+            title=user_style.title,
+            abstract=user_style.abstract,
+            style_name=user_style.name,
         )
