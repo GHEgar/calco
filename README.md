@@ -1,20 +1,53 @@
-# calco
+# <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/icon-dark.svg"><img src=".github/assets/icon-light.svg" width="36" height="36" alt=""></picture> calco
 
-Write and parse [SLD](https://www.ogc.org/standard/sld/) styles both ways, and translate SLD labels
-to [MapLibre](https://maplibre.org/) symbol layers.
+[![PyPI](https://img.shields.io/pypi/v/calco)](https://pypi.org/project/calco/)
+[![Python](https://img.shields.io/pypi/pyversions/calco)](https://pypi.org/project/calco/)
+[![license](https://img.shields.io/github/license/GHEgar/calco)](LICENSE)
 
-- **Round trip as a contract**: every recipe satisfies `recognize(parse(write(style))) == style`.
-- **Nothing is lost silently**: whatever the reader does not understand is reported with its path.
-- **No runtime dependencies**: the standard library's `xml.etree` and frozen dataclasses.
-- Writes SLD 1.0.0, the version GeoServer handles best; reads SLD 1.0.0 and SLD 1.1 / SE 1.1.
-- Classification (quantile, Jenks, equal interval, standard deviation) ported from
-  `@ghegar/panal/classify` and checked against its test vectors.
+Write and parse SLD styles both ways, and translate SLD labels to MapLibre layers.
+
+![US states by population in five Jenks classes, labeled, drawn by GeoServer from an SLD written by calco](.github/assets/choropleth.png)
+
+calco writes [SLD](https://www.ogc.org/standard/sld/) from recipes (choropleths, categories,
+polygons, lines, points, labels) and reads any SLD back into the same recipes. The round trip is a
+contract: every recipe satisfies `recognize(parse(write(style))) == style`. Nothing is lost silently:
+whatever the reader does not understand is reported with its path. It writes SLD 1.0.0, the version
+GeoServer handles best, and reads SLD 1.0.0 and SLD 1.1 / SE 1.1. The labels of any SLD translate to
+[MapLibre](https://maplibre.org/) `symbol` layers. No runtime dependencies: the standard library's
+`xml.etree` and frozen dataclasses. Classification (quantile, Jenks, equal interval, standard
+deviation) is ported from `@ghegar/panal/classify` and checked against its test vectors.
+
+## Install
 
 ```bash
 pip install calco
 ```
 
 Requires Python 3.12 or newer.
+
+| Entry | What it is | Needs |
+|---|---|---|
+| `calco` | Recipes, classification, the generic SLD model, `parse`, `write` and `recognize` | nothing |
+| `calco.maplibre` | SLD labels to MapLibre `symbol` layers, `strip_text`, scale and zoom conversion | nothing |
+
+## Quick start
+
+```python
+from calco import Choropleth, Halo, Label, Property, parse, recognize, write
+from calco.maplibre import label_layers, strip_text
+
+style = Choropleth.from_breaks(
+    "states",
+    "PERSONS",
+    breaks=[0, 2_000_000, 5_000_000, None],
+    colors=["#FEE5D9", "#FCAE91", "#CB181D"],
+    label=Label(Property("STATE_ABBR"), halo=Halo(2)),
+)
+xml = write(style.to_layer())
+assert recognize(parse(xml)) == style
+labels = label_layers(parse(xml), source="states").layers
+wms_body = strip_text(xml)
+```
 
 ## Recipes
 
@@ -97,7 +130,7 @@ numbers (`15`) read back as numbers; anything else (`"001"`) stays text.
 ### Single polygon, lines, points and labels only
 
 ```python
-from calco import ExternalGraphic, Fill, Graphic, Mark, Point, Polygon, ScaleRange
+from calco import Annotation, ExternalGraphic, Fill, Graphic, Line, Mark, Point, Polygon, ScaleRange
 
 outline = Polygon(
     "states", fill=None, stroke=Stroke("#333333", 1), scales=ScaleRange(max=5_000_000)
@@ -150,15 +183,7 @@ A WMS `GetStyles` response lists every style of the layer. `recognize(document, 
 one by name; without a name it takes the `IsDefault` one, or the only one. What the reader could not
 understand is reported per user style, so a foreign style next to yours does not block it.
 
-### GeoServer notes
-
-- GeoServer reads the whitespace between parts of a `Label` as a single space, and writes styles back
-  indented. calco writes labels without indentation and reads them the same way GeoServer does, but a
-  style GeoServer re-encodes gains a space next to every literal each time it is rewritten.
-- GeoServer renames the layer to `Default Styler` and names the `FeatureTypeStyle` `name` when it
-  stores a style; recipes ignore `FeatureTypeStyle` names.
-
-## MapLibre labels
+## MapLibre
 
 ```python
 from calco.maplibre import label_layers, strip_text
@@ -187,6 +212,16 @@ MapLibre draws the labels.
 
 `scale_to_zoom` and `zoom_to_scale` convert with the OGC 0.28 mm pixel and 512 px tiles by default.
 
+## Known limitations
+
+- GeoServer reads the whitespace between parts of a `Label` as a single space, and writes styles back
+  indented. calco writes labels without indentation and reads them the same way GeoServer does, but a
+  style GeoServer re-encodes gains a space next to every literal each time it is rewritten.
+- GeoServer renames the layer to `Default Styler` and names the `FeatureTypeStyle` `name` when it
+  stores a style; recipes ignore `FeatureTypeStyle` names.
+- MapLibre has no equivalent for `PropertyIsLike` or for `numberFormat` without digit grouping: a
+  label rule that uses them is skipped and reported.
+
 ## Development
 
 ```bash
@@ -210,6 +245,10 @@ docker run -d --rm --name calco-geoserver -p 8599:8080 -e SAMPLE_DATA=true \
 CALCO_GEOSERVER_URL=http://localhost:8599/geoserver pytest -m geoserver
 ```
 
+## Contributing
+
+Issues are welcome. Open one before sending a pull request.
+
 ## License
 
-[AGPL-3.0-only](LICENSE)
+AGPL-3.0-only © GHEgar
